@@ -1,0 +1,29 @@
+# .NET
+[Bb]in/
+[Oo]bj/
+TestResults/
+
+# Node / Vite
+frontend/node_modules/
+frontend/dist/
+*.tsbuildinfo
+
+# Dados gerados localmente
+backend/src/FamilyPlus.Api/data/
+backend/src/FamilyPlus.Api/logs/
+backend/src/FamilyPlus.Api/backups/
+
+# Sistema e IDE
+.vs/
+.idea/
+.vscode/
+*.user
+*.suo
+*.log
+.DS_Store
+
+# Orquestração local de IA: nunca versionar segredos, execução nem worktrees.
+.env.ai-dev
+.ai-run/
+.worktrees/
+tools/ai-dev/.venv/
