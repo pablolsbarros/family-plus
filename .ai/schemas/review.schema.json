@@ -1,0 +1,22 @@
+{
+  "type": "object",
+  "properties": {
+    "status": { "type": "string", "enum": ["approved", "changes_requested", "blocked"] },
+    "findings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "severity": { "type": "string", "enum": ["low", "medium", "high", "critical"] },
+          "file": { "type": "string" },
+          "description": { "type": "string" },
+          "reason": { "type": "string" }
+        },
+        "required": ["severity", "file", "description", "reason"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["status", "findings"],
+  "additionalProperties": false
+}

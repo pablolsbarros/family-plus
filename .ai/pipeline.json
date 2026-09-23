@@ -1,0 +1,10 @@
+{
+  "commands": [
+    "dotnet restore FamilyPlus.sln",
+    "dotnet build FamilyPlus.sln --no-restore",
+    "dotnet test backend/tests/FamilyPlus.Api.Tests/FamilyPlus.Api.Tests.csproj --no-build",
+    "npm ci --prefix frontend",
+    "npm run lint --prefix frontend",
+    "npm run build --prefix frontend"
+  ]
+}
