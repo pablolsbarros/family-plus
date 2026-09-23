@@ -9,7 +9,10 @@ frontend/dist/
 *.tsbuildinfo
 
 # Dados gerados localmente
-backend/src/FamilyPlus.Api/data/
+backend/src/FamilyPlus.Api/data/*.db
+backend/src/FamilyPlus.Api/data/*.db-*
+backend/src/FamilyPlus.Api/data/*.sqlite
+backend/src/FamilyPlus.Api/data/*.sqlite3
 backend/src/FamilyPlus.Api/logs/
 backend/src/FamilyPlus.Api/backups/
 
@@ -27,3 +30,5 @@ backend/src/FamilyPlus.Api/backups/
 .ai-run/
 .worktrees/
 tools/ai-dev/.venv/
+__pycache__/
+*.py[cod]
