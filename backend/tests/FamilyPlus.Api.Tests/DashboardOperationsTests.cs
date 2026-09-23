@@ -27,6 +27,24 @@ public sealed class DashboardOperationsTests
     }
 
     [Fact]
+    public async Task Evolucao_mensal_respeita_o_intervalo_customizado()
+    {
+        await using var fixture = await DashboardFixture.CreateAsync();
+        await fixture.AddTransactionAsync(TipoTransacao.RECEITA, 10_000, StatusTransacao.EFETIVADA, data: new DateTimeOffset(2026, 8, 1, 0, 0, 0, TimeSpan.Zero));
+        await fixture.AddTransactionAsync(TipoTransacao.RECEITA, 15_000, StatusTransacao.EFETIVADA, data: new DateTimeOffset(2026, 8, 15, 12, 0, 0, TimeSpan.Zero));
+        await fixture.AddTransactionAsync(TipoTransacao.RECEITA, 20_000, StatusTransacao.EFETIVADA, data: new DateTimeOffset(2026, 9, 12, 12, 0, 0, TimeSpan.Zero));
+        await fixture.AddTransactionAsync(TipoTransacao.RECEITA, 5_000, StatusTransacao.EFETIVADA, data: new DateTimeOffset(2026, 9, 30, 12, 0, 0, TimeSpan.Zero));
+        await fixture.AddTransactionAsync(TipoTransacao.RECEITA, 30_000, StatusTransacao.EFETIVADA, data: new DateTimeOffset(2026, 10, 1, 12, 0, 0, TimeSpan.Zero));
+
+        var summary = await fixture.Dashboard.GetSummaryAsync(new DashboardQueryRequest("2026-08-15", "2026-09-20", HorizonteDias: 30));
+
+        Assert.Equal(2, summary.Evolucao.Count);
+        Assert.Equal(15_000, summary.Evolucao[0].ReceitasCentavos);
+        Assert.Equal(20_000, summary.Evolucao[1].ReceitasCentavos);
+        Assert.Equal(35_000, summary.Periodo.ReceitasCentavos);
+    }
+
+    [Fact]
     public async Task Projecao_soma_previsto_recorrencia_e_fatura_sem_alterar_saldo_real()
     {
         await using var fixture = await DashboardFixture.CreateAsync();
