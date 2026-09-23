@@ -46,7 +46,7 @@ public sealed class DashboardOperationsTests
     }
 
     [Fact]
-    public async Task Evolucao_mantem_saldo_global_ao_filtrar_receitas_e_despesas_por_membro()
+    public async Task Evolucao_filtra_saldo_e_movimentacoes_por_membro()
     {
         await using var fixture = await DashboardFixture.CreateAsync();
         await fixture.AddTransactionAsync(TipoTransacao.RECEITA, 10_000, StatusTransacao.EFETIVADA);
@@ -72,7 +72,8 @@ public sealed class DashboardOperationsTests
         var summary = await fixture.Dashboard.GetSummaryAsync(new DashboardQueryRequest("2026-09-01", "2026-09-30", fixture.Member.Id));
 
         Assert.Equal(10_000, summary.Evolucao.Single().ReceitasCentavos);
-        Assert.Equal(550_000, summary.Evolucao.Single().SaldoFinalCentavos);
+        Assert.Equal(210_000, summary.Evolucao.Single().SaldoFinalCentavos);
+        Assert.Equal(summary.Saldo.SaldoConsolidadoCentavos, summary.Evolucao.Single().SaldoFinalCentavos);
     }
 
     [Fact]
