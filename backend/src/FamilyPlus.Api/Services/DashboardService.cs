@@ -49,7 +49,7 @@ public sealed class DashboardService(FinanceDbContext db, RecurrenceService recu
         var cards = BuildCards(scope.Cards.Where(x => x.Ativo && (!request.MembroId.HasValue || x.MembroId == request.MembroId)).ToList(), scope.Invoices, scope.Installments, purchaseRefunds);
         var expenseCategories = BuildCategories(periodTransactions.Where(x => x.Tipo == TipoTransacao.DESPESA), purchases, purchaseRefunds, false, expense);
         var incomeCategories = BuildCategories(periodTransactions.Where(x => x.Tipo == TipoTransacao.RECEITA), [], purchaseRefunds, true, income);
-        var evolution = BuildEvolution(memberTransactions, scope.Purchases.Where(x => !request.MembroId.HasValue || x.MembroId == request.MembroId).ToList(), purchaseRefunds, accounts, periodStart, periodEnd);
+        var evolution = BuildEvolution(memberTransactions, scope.Transactions, scope.Purchases.Where(x => !request.MembroId.HasValue || x.MembroId == request.MembroId).ToList(), purchaseRefunds, scope.Accounts.Where(x => x.Ativo).ToList(), periodStart, periodEnd);
         var activeRecurrences = scope.Recurrences.Where(x => x.Status == StatusRecorrencia.ATIVA && (!request.MembroId.HasValue || x.MembroId == request.MembroId)).ToList();
         var recurringIncome = activeRecurrences.Where(x => x.Tipo == TipoTransacao.RECEITA).Sum(x => RecurrenceCycle.MonthlyEquivalent(x.ValorCentavos, x.Frequencia));
         var recurringExpense = activeRecurrences.Where(x => x.Tipo == TipoTransacao.DESPESA).Sum(x => RecurrenceCycle.MonthlyEquivalent(x.ValorCentavos, x.Frequencia));
@@ -140,7 +140,7 @@ public sealed class DashboardService(FinanceDbContext db, RecurrenceService recu
         return values.Values.OrderByDescending(x => x.Value).Select(x => new DashboardCategoryResponse(x.Id, x.Name, x.Value, total == 0 ? 0 : Math.Round((decimal)x.Value * 100 / total, 2))).ToList();
     }
 
-    private static IReadOnlyList<DashboardMonthlyResponse> BuildEvolution(IReadOnlyList<Transacao> transactions, IReadOnlyList<CompraCartao> purchases, IReadOnlyDictionary<Guid, long> refunds, IReadOnlyList<Conta> accounts, DateTimeOffset periodStart, DateTimeOffset periodEnd)
+    private static IReadOnlyList<DashboardMonthlyResponse> BuildEvolution(IReadOnlyList<Transacao> memberTransactions, IReadOnlyList<Transacao> allTransactions, IReadOnlyList<CompraCartao> purchases, IReadOnlyDictionary<Guid, long> refunds, IReadOnlyList<Conta> accounts, DateTimeOffset periodStart, DateTimeOffset periodEnd)
     {
         var firstMonth = new DateTimeOffset(periodStart.Year, periodStart.Month, 1, 12, 0, 0, TimeSpan.Zero);
         var lastMonth = new DateTimeOffset(periodEnd.Year, periodEnd.Month, 1, 12, 0, 0, TimeSpan.Zero);
@@ -150,11 +150,12 @@ public sealed class DashboardService(FinanceDbContext db, RecurrenceService recu
             var next = month.AddMonths(1);
             var monthStartUtc = month.UtcDateTime.Date;
             var nextMonthStartUtc = next.UtcDateTime.Date;
-            var rows = transactions.Where(x => x.Status == StatusTransacao.EFETIVADA && x.Origem != OrigemTransacao.PAGAMENTO_FATURA && (x.Tipo is TipoTransacao.RECEITA or TipoTransacao.DESPESA) && x.DataMovimentacao.UtcDateTime.Date >= monthStartUtc && x.DataMovimentacao.UtcDateTime.Date < nextMonthStartUtc && InRange(x.DataMovimentacao, periodStart, periodEnd)).ToList();
+            var rows = memberTransactions.Where(x => x.Status == StatusTransacao.EFETIVADA && x.Origem != OrigemTransacao.PAGAMENTO_FATURA && (x.Tipo is TipoTransacao.RECEITA or TipoTransacao.DESPESA) && x.DataMovimentacao.UtcDateTime.Date >= monthStartUtc && x.DataMovimentacao.UtcDateTime.Date < nextMonthStartUtc && InRange(x.DataMovimentacao, periodStart, periodEnd)).ToList();
             var monthPurchases = purchases.Where(x => x.Status != StatusCompraCartao.CANCELADA && x.DataCompra.UtcDateTime.Date >= monthStartUtc && x.DataCompra.UtcDateTime.Date < nextMonthStartUtc && InRange(x.DataCompra, periodStart, periodEnd)).Sum(x => Math.Max(0, x.ValorTotalCentavos - refunds.GetValueOrDefault(x.Id)));
             var income = rows.Where(x => x.Tipo == TipoTransacao.RECEITA).Sum(x => x.ValorCentavos);
             var expense = rows.Where(x => x.Tipo == TipoTransacao.DESPESA).Sum(x => x.ValorCentavos) + monthPurchases;
-            var balance = accounts.Sum(x => x.SaldoInicialCentavos) + transactions.Where(x => x.Status == StatusTransacao.EFETIVADA && x.DataMovimentacao.UtcDateTime < nextMonthStartUtc).Sum(x => FinanceCalculator.Delta(x.Tipo, x.ValorCentavos));
+            var balanceCutoffUtc = periodEnd.UtcDateTime.Date.AddDays(1) < nextMonthStartUtc ? periodEnd.UtcDateTime.Date.AddDays(1) : nextMonthStartUtc;
+            var balance = accounts.Sum(x => x.SaldoInicialCentavos) + allTransactions.Where(x => x.Status == StatusTransacao.EFETIVADA && x.DataMovimentacao.UtcDateTime < balanceCutoffUtc).Sum(x => FinanceCalculator.Delta(x.Tipo, x.ValorCentavos));
             result.Add(new DashboardMonthlyResponse(month, income, expense, income - expense, balance));
         }
         return result;

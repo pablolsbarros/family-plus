@@ -42,6 +42,37 @@ public sealed class DashboardOperationsTests
         Assert.Equal(15_000, summary.Evolucao[0].ReceitasCentavos);
         Assert.Equal(20_000, summary.Evolucao[1].ReceitasCentavos);
         Assert.Equal(35_000, summary.Periodo.ReceitasCentavos);
+        Assert.Equal(245_000, summary.Evolucao[1].SaldoFinalCentavos);
+    }
+
+    [Fact]
+    public async Task Evolucao_mantem_saldo_global_ao_filtrar_receitas_e_despesas_por_membro()
+    {
+        await using var fixture = await DashboardFixture.CreateAsync();
+        await fixture.AddTransactionAsync(TipoTransacao.RECEITA, 10_000, StatusTransacao.EFETIVADA);
+        var otherMember = new Membro { Nome = "Outro membro" };
+        var otherAccount = new Conta { Membro = otherMember, Nome = "Conta compartilhada", Tipo = TipoConta.ContaCorrente, SaldoInicialCentavos = 300_000 };
+        fixture.Db.AddRange(otherMember, otherAccount);
+        await fixture.Db.SaveChangesAsync();
+        fixture.Db.Transacoes.Add(new Transacao
+        {
+            MembroId = otherMember.Id,
+            ContaId = otherAccount.Id,
+            CategoriaId = fixture.IncomeCategory.Id,
+            Tipo = TipoTransacao.RECEITA,
+            Descricao = "Receita global",
+            ValorCentavos = 40_000,
+            DataCompetencia = fixture.Today,
+            DataMovimentacao = fixture.Today,
+            Status = StatusTransacao.EFETIVADA,
+            Origem = OrigemTransacao.NORMAL
+        });
+        await fixture.Db.SaveChangesAsync();
+
+        var summary = await fixture.Dashboard.GetSummaryAsync(new DashboardQueryRequest("2026-09-01", "2026-09-30", fixture.Member.Id));
+
+        Assert.Equal(10_000, summary.Evolucao.Single().ReceitasCentavos);
+        Assert.Equal(550_000, summary.Evolucao.Single().SaldoFinalCentavos);
     }
 
     [Fact]
