@@ -67,11 +67,10 @@ public sealed class SaudeFinanceiraService(FinanceDbContext db, BudgetService bu
         var memberAccounts = familyAccounts.Where(x => !memberId.HasValue || x.MembroId == memberId).ToList();
         var accounts = memberAccounts.Where(x => x.Tipo is TipoConta.ContaCorrente or TipoConta.ContaPoupanca or TipoConta.ContaDigital).ToList();
         var accountIds = memberAccounts.Select(x => x.Id).ToArray();
-        var eligibleAccountIds = accounts.Select(x => x.Id).ToArray();
         // O provedor SQLite usado pelo aplicativo não traduz DateTimeOffset em LINQ.
         // A consulta parametrizada mantém o recorte temporal no banco sem perder compatibilidade.
         var transactions = await db.Transacoes
-            .FromSqlInterpolated($"SELECT * FROM transacao WHERE FamiliaId = {familiaId} AND Status = {(int)StatusTransacao.EFETIVADA} AND DataCompetencia >= {analysisStart}")
+            .FromSqlInterpolated($"SELECT * FROM transacao WHERE FamiliaId = {familiaId} AND Status = {(int)StatusTransacao.EFETIVADA} AND (DataCompetencia >= {analysisStart} OR DataMovimentacao >= {selectedStart})")
             .AsNoTracking()
             .ToListAsync();
         var periodTransactions = transactions
