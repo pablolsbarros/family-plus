@@ -62,13 +62,17 @@ public sealed class SaudeFinanceiraService(FinanceDbContext db, BudgetService bu
         var historicalEnd = new DateTimeOffset(referenceEnd.Year, referenceEnd.Month, 1, 0, 0, 0, TimeSpan.Zero);
         var historicalStart = historicalEnd.AddMonths(-6);
         var periodEndExclusive = referenceEnd.AddDays(1);
+        var analysisStart = selectedStart < historicalStart ? selectedStart : historicalStart;
         var familyAccounts = await db.Contas.AsNoTracking().Where(x => x.FamiliaId == familiaId && x.Ativo).ToListAsync();
         var memberAccounts = familyAccounts.Where(x => !memberId.HasValue || x.MembroId == memberId).ToList();
         var accounts = memberAccounts.Where(x => x.Tipo is TipoConta.ContaCorrente or TipoConta.ContaPoupanca or TipoConta.ContaDigital).ToList();
         var accountIds = memberAccounts.Select(x => x.Id).ToArray();
         var eligibleAccountIds = accounts.Select(x => x.Id).ToArray();
-        var transactions = await db.Transacoes.AsNoTracking()
-            .Where(x => x.FamiliaId == familiaId && x.Status == StatusTransacao.EFETIVADA)
+        // O provedor SQLite usado pelo aplicativo não traduz DateTimeOffset em LINQ.
+        // A consulta parametrizada mantém o recorte temporal no banco sem perder compatibilidade.
+        var transactions = await db.Transacoes
+            .FromSqlInterpolated($"SELECT * FROM transacao WHERE FamiliaId = {familiaId} AND Status = {(int)StatusTransacao.EFETIVADA} AND DataCompetencia >= {analysisStart}")
+            .AsNoTracking()
             .ToListAsync();
         var periodTransactions = transactions
             .Where(x => accountIds.Contains(x.ContaId)
@@ -77,17 +81,18 @@ public sealed class SaudeFinanceiraService(FinanceDbContext db, BudgetService bu
                 && x.Origem != OrigemTransacao.PAGAMENTO_FATURA
                 && x.TransferenciaId == null
                 && (x.Tipo is TipoTransacao.RECEITA or TipoTransacao.DESPESA)
-                && x.DataMovimentacao >= periodStart
+                && x.DataMovimentacao >= selectedStart
                 && x.DataMovimentacao < periodEndExclusive)
             .ToList();
         var periodIncome = periodTransactions.Where(x => x.Tipo == TipoTransacao.RECEITA).Sum(x => x.ValorCentavos);
-        var purchases = await db.ComprasCartao.AsNoTracking()
-            .Where(x => x.FamiliaId == familiaId && x.Status == StatusCompraCartao.ATIVA)
+        var purchases = await db.ComprasCartao
+            .FromSqlInterpolated($"SELECT * FROM compra_cartao WHERE FamiliaId = {familiaId} AND Status = {(int)StatusCompraCartao.ATIVA} AND DataCompra >= {analysisStart}")
+            .AsNoTracking()
             .ToListAsync();
         var periodPurchases = purchases
             .Where(x => x.Status == StatusCompraCartao.ATIVA
                 && (!memberId.HasValue || x.MembroId == memberId)
-                && x.DataCompra >= periodStart
+                && x.DataCompra >= selectedStart
                 && x.DataCompra < periodEndExclusive)
             .ToList();
         var historicalTransactions = transactions
@@ -131,7 +136,7 @@ public sealed class SaudeFinanceiraService(FinanceDbContext db, BudgetService bu
             .ToListAsync();
         var recurring = recurringCandidates
             .Where(x => x.DataInicio <= referenceEnd
-                && (!x.DataFim.HasValue || x.DataFim.Value >= referenceEnd)
+                && (!x.DataFim.HasValue || x.DataFim.Value >= selectedStart)
                 && (!memberId.HasValue || x.MembroId == memberId))
             .ToList();
         var recurringExpense = recurring.Where(x => x.Classificacao == TipoRecorrencia.NORMAL || x.Classificacao == TipoRecorrencia.CONTA_FIXA).Sum(x => RecurrenceCycle.MonthlyEquivalent(x.ValorCentavos, x.Frequencia));
@@ -139,13 +144,24 @@ public sealed class SaudeFinanceiraService(FinanceDbContext db, BudgetService bu
         var commitment = enoughHistory && averageIncome > 0 ? Metric((decimal)recurringExpense * 100 / averageIncome) : Insufficient();
         var fixedShare = enoughHistory && averageIncome > 0 ? Metric((decimal)fixedExpense * 100 / averageIncome) : Insufficient();
 
-        var balances = transactions
-            .Where(x => eligibleAccountIds.Contains(x.ContaId) && x.Status == StatusTransacao.EFETIVADA)
-            .ToList();
+        var balanceDeltas = await db.Transacoes.AsNoTracking()
+            .Where(x => x.FamiliaId == familiaId && x.Status == StatusTransacao.EFETIVADA)
+            .GroupBy(x => x.ContaId)
+            .Select(group => new
+            {
+                ContaId = group.Key,
+                DeltaCentavos = group.Sum(x => x.Tipo == TipoTransacao.RECEITA || x.Tipo == TipoTransacao.TRANSFERENCIA_ENTRADA
+                    ? x.ValorCentavos
+                    : x.Tipo == TipoTransacao.DESPESA || x.Tipo == TipoTransacao.TRANSFERENCIA_SAIDA
+                        ? -x.ValorCentavos
+                        : 0)
+            })
+            .ToDictionaryAsync(x => x.ContaId, x => x.DeltaCentavos);
         var available = accounts.Sum(account => Math.Max(0, FinanceCalculator.CalculateBalance(
             account.SaldoInicialCentavos,
-            balances.Where(x => x.ContaId == account.Id)
-                .Select(x => (x.Tipo, x.ValorCentavos, x.Status)))));
+            balanceDeltas.TryGetValue(account.Id, out var delta)
+                ? [(TipoTransacao.RECEITA, delta, StatusTransacao.EFETIVADA)]
+                : [])));
         var reserve = profile.CategoriasEssenciais.Count == 0
             ? new FinancialHealthMetric(null, "categorias_nao_configuradas")
             : enoughHistory && averageEssentialExpenses > 0 ? Metric((decimal)available / averageEssentialExpenses) : Insufficient();
