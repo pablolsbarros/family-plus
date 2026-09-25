@@ -77,6 +77,53 @@ public sealed class DashboardOperationsTests
     }
 
     [Fact]
+    public async Task Saude_financeira_persiste_perfil_e_sinaliza_dados_insuficientes()
+    {
+        await using var fixture = await DashboardFixture.CreateAsync();
+        var service = new SaudeFinanceiraService(fixture.Db, fixture.Budgets, () => fixture.Today);
+
+        var profile = await service.SaveProfileAsync(new FinancialHealthProfileRequest(
+            fixture.Member.Id, 6m, 30m, 20m, "Reserva familiar", [fixture.ExpenseCategory.Id]));
+        var metrics = await service.CalculateAsync(fixture.Member.Id, new DateTimeOffset(2026, 9, 1, 12, 0, 0, TimeSpan.Zero), new DateTimeOffset(2026, 9, 30, 12, 0, 0, TimeSpan.Zero));
+
+        Assert.True(profile.Configurado);
+        Assert.Equal(6m, profile.MetaReservaMeses);
+        Assert.Equal(fixture.ExpenseCategory.Id, Assert.Single(profile.CategoriasEssenciais));
+        Assert.Equal("dados_insuficientes", metrics.ReservaEmergenciaMeses.Estado);
+        Assert.Null(metrics.ReservaEmergenciaMeses.Valor);
+        Assert.Equal("dados_insuficientes", metrics.TaxaPoupanca.Estado);
+        Assert.Null(metrics.TaxaPoupanca.Valor);
+    }
+
+    [Fact]
+    public async Task Saude_financeira_usa_seis_competencias_completas_e_saldo_bancario_elegivel()
+    {
+        await using var fixture = await DashboardFixture.CreateAsync();
+        var service = new SaudeFinanceiraService(fixture.Db, fixture.Budgets, () => fixture.Today);
+        await service.SaveProfileAsync(new FinancialHealthProfileRequest(fixture.Member.Id, 6m, 30m, 20m, null, [fixture.ExpenseCategory.Id]));
+        foreach (var month in new[] { 3, 4, 5 })
+        {
+            var date = new DateTimeOffset(2026, month, 15, 12, 0, 0, TimeSpan.Zero);
+            await fixture.AddTransactionAsync(TipoTransacao.RECEITA, 100_000, StatusTransacao.EFETIVADA, data: date);
+            await fixture.AddTransactionAsync(TipoTransacao.DESPESA, 20_000, StatusTransacao.EFETIVADA, data: date);
+        }
+        fixture.Db.Recorrencias.Add(new Recorrencia
+        {
+            MembroId = fixture.Member.Id, ContaId = fixture.Account.Id, CategoriaId = fixture.ExpenseCategory.Id,
+            Tipo = TipoTransacao.DESPESA, Classificacao = TipoRecorrencia.CONTA_FIXA, Descricao = "Aluguel",
+            ValorCentavos = 30_000, Frequencia = FrequenciaRecorrencia.MENSAL, DataInicio = new DateTimeOffset(2026, 1, 1, 12, 0, 0, TimeSpan.Zero),
+            ProximaOcorrencia = fixture.Today, DiaReferencia = 1
+        });
+        await fixture.Db.SaveChangesAsync();
+
+        var metrics = await service.CalculateAsync(fixture.Member.Id, new DateTimeOffset(2026, 9, 1, 12, 0, 0, TimeSpan.Zero), new DateTimeOffset(2026, 9, 30, 12, 0, 0, TimeSpan.Zero));
+
+        Assert.Equal(60m, metrics.ComprometimentoRenda.Valor);
+        Assert.Equal(60m, metrics.GastosFixos.Valor);
+        Assert.Equal(44m, metrics.ReservaEmergenciaMeses.Valor);
+    }
+
+    [Fact]
     public async Task Projecao_soma_previsto_recorrencia_e_fatura_sem_alterar_saldo_real()
     {
         await using var fixture = await DashboardFixture.CreateAsync();

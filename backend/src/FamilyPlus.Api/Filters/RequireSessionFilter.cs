@@ -50,6 +50,7 @@ public sealed class RequireSessionFilter(AuthService authService, FinanceDbConte
         if (value.StartsWith("/api/cartoes", StringComparison.OrdinalIgnoreCase) || value.StartsWith("/api/compras-cartao", StringComparison.OrdinalIgnoreCase) || value.StartsWith("/api/faturas", StringComparison.OrdinalIgnoreCase)) return method == "POST" ? "CARTAO_CRIAR" : "CARTAO_ADMINISTRAR";
         if (value.StartsWith("/api/recorrencias", StringComparison.OrdinalIgnoreCase) || value.StartsWith("/api/ocorrencias-recorrentes", StringComparison.OrdinalIgnoreCase) || value.StartsWith("/api/assinaturas", StringComparison.OrdinalIgnoreCase)) return "RECORRENCIA_ADMINISTRAR";
         if (value.StartsWith("/api/orcamentos", StringComparison.OrdinalIgnoreCase)) return "ORCAMENTO_EDITAR";
+        if (value.StartsWith("/api/saude-financeira", StringComparison.OrdinalIgnoreCase)) return "ORCAMENTO_EDITAR";
         if (value.StartsWith("/api/seguranca", StringComparison.OrdinalIgnoreCase) || value.StartsWith("/api/configuracoes/preferencias", StringComparison.OrdinalIgnoreCase) || value.StartsWith("/api/configuracoes/notificacoes", StringComparison.OrdinalIgnoreCase)) return null;
         if (value.StartsWith("/api/configuracoes/backup", StringComparison.OrdinalIgnoreCase)) return "BACKUP_RESTAURAR";
         if (value.StartsWith("/api/configuracoes", StringComparison.OrdinalIgnoreCase)) return "CONFIGURACAO_ADMINISTRAR";

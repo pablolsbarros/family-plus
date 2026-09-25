@@ -2431,6 +2431,35 @@ namespace FamilyPlus.Api.Migrations
                 {
                     b.Navigation("Sessoes");
                 });
+#pragma warning disable 612, 618
+            modelBuilder.Entity("FamilyPlus.Api.Entities.PerfilSaudeFinanceira", b =>
+                {
+                    b.Property<Guid>("Id").ValueGeneratedOnAdd().HasColumnType("TEXT");
+                    b.Property<bool>("Ativo").HasColumnType("INTEGER");
+                    b.Property<DateTimeOffset>("AtualizadoEm").HasColumnType("TEXT");
+                    b.Property<string>("CategoriasEssenciaisJson").IsRequired().HasMaxLength(4000).HasColumnType("TEXT");
+                    b.Property<DateTimeOffset>("CriadoEm").HasColumnType("TEXT");
+                    b.Property<Guid?>("FamiliaId").HasColumnType("TEXT");
+                    b.Property<decimal>("MetaReservaMeses").HasPrecision(6, 2).HasColumnType("TEXT");
+                    b.Property<decimal?>("MetaPoupancaPercentual").HasPrecision(6, 2).HasColumnType("TEXT");
+                    b.Property<Guid?>("MembroId").HasColumnType("TEXT");
+                    b.Property<string>("Observacao").HasMaxLength(1000).HasColumnType("TEXT");
+                    b.Property<decimal>("TetoComprometimentoPercentual").HasPrecision(6, 2).HasColumnType("TEXT");
+                    b.HasKey("Id");
+                    b.HasIndex("MembroId");
+                    b.HasIndex("FamiliaId").IsUnique().HasFilter("\"MembroId\" IS NULL");
+                    b.HasIndex("FamiliaId", "MembroId").IsUnique().HasFilter("\"MembroId\" IS NOT NULL");
+                    b.ToTable("perfil_saude_financeira", (string)null);
+                });
+
+            modelBuilder.Entity("FamilyPlus.Api.Entities.PerfilSaudeFinanceira", b =>
+                {
+                    b.HasOne("FamilyPlus.Api.Entities.Membro", "Membro")
+                        .WithMany()
+                        .HasForeignKey("MembroId")
+                        .OnDelete(DeleteBehavior.Restrict);
+                    b.Navigation("Membro");
+                });
 #pragma warning restore 612, 618
         }
     }

@@ -409,6 +409,17 @@ public sealed class Configuracao
     public DateTimeOffset AtualizadoEm { get; set; } = DateTimeOffset.UtcNow;
 }
 
+public sealed class PerfilSaudeFinanceira : EntityBase
+{
+    public Guid? MembroId { get; set; }
+    public decimal MetaReservaMeses { get; set; } = 6m;
+    public decimal TetoComprometimentoPercentual { get; set; } = 30m;
+    public decimal? MetaPoupancaPercentual { get; set; } = 20m;
+    public string? Observacao { get; set; }
+    public string CategoriasEssenciaisJson { get; set; } = "[]";
+    public Membro? Membro { get; set; }
+}
+
 public sealed class ConfiguracaoFamilia
 {
     public Guid FamiliaId { get; set; }

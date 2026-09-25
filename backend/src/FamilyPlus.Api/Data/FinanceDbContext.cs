@@ -46,6 +46,7 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options)
     public DbSet<Importacao> Importacoes => Set<Importacao>();
     public DbSet<ImportacaoArquivo> ImportacoesArquivos => Set<ImportacaoArquivo>();
     public DbSet<ImportacaoItem> ImportacoesItens => Set<ImportacaoItem>();
+    public DbSet<PerfilSaudeFinanceira> PerfisSaudeFinanceira => Set<PerfilSaudeFinanceira>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -158,6 +159,18 @@ public sealed class FinanceDbContext(DbContextOptions<FinanceDbContext> options)
             entity.HasIndex(x => x.Chave).IsUnique();
             entity.Property(x => x.Chave).HasMaxLength(120).IsRequired();
             entity.Property(x => x.Valor).HasMaxLength(2000).IsRequired();
+        });
+        modelBuilder.Entity<PerfilSaudeFinanceira>(entity =>
+        {
+            entity.ToTable("perfil_saude_financeira");
+            entity.Property(x => x.MetaReservaMeses).HasPrecision(6, 2);
+            entity.Property(x => x.TetoComprometimentoPercentual).HasPrecision(6, 2);
+            entity.Property(x => x.MetaPoupancaPercentual).HasPrecision(6, 2);
+            entity.Property(x => x.Observacao).HasMaxLength(1000);
+            entity.Property(x => x.CategoriasEssenciaisJson).HasMaxLength(4000).IsRequired();
+            entity.HasIndex(x => x.FamiliaId).IsUnique().HasFilter("\"MembroId\" IS NULL");
+            entity.HasIndex(x => new { x.FamiliaId, x.MembroId }).IsUnique().HasFilter("\"MembroId\" IS NOT NULL");
+            entity.HasOne(x => x.Membro).WithMany().HasForeignKey(x => x.MembroId).OnDelete(DeleteBehavior.Restrict);
         });
         modelBuilder.Entity<Cartao>(entity =>
         {

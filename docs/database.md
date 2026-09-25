@@ -18,6 +18,7 @@ O banco SQLite fica em `backend/src/FamilyPlus.Api/data/familyplus.db`. Ao inici
 | `ocorrencia_recorrencia` | Previsão individual, status e vínculo opcional à transação efetivada ou compra de cartão |
 | `assinatura` | Serviço recorrente, periodicidade, cobrança por conta/cartão e cancelamento lógico |
 | `alerta` | Alertas gerenciais persistidos, leitura, resolução e chave de deduplicação |
+| `perfil_saude_financeira` | Metas e categorias essenciais por família e, opcionalmente, por membro |
 | `auditoria`, `configuracao` | Rastreabilidade e preferências |
 
 ## Relacionamentos de cartões
@@ -44,6 +45,7 @@ compra_cartao ──< estorno_cartao >── fatura
 - `item_orcamento` possui índices por orçamento, categoria e membro e índice único `(orcamento_id, categoria_id, membro_id)`. A validação de serviço complementa a unicidade para itens compartilhados nulos no SQLite.
 - O Dashboard consulta as entidades operacionais e de planejamento em tempo real e não mantém uma tabela de totais derivados. `alerta` persiste somente condições acionáveis e usa chaves estáveis para deduplicação.
 - `alerta` possui índices por data, tipo, severidade, resolução e chave/situação para manter a central rápida em volume pessoal.
+- `perfil_saude_financeira` mantém metas percentuais, meta de reserva, observação e IDs de categorias essenciais em JSON; índices filtrados garantem um perfil familiar e um perfil por membro sem reaproveitar `configuracao`.
 
 Para uma migration futura:
 

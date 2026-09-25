@@ -1,0 +1,6 @@
+.health-categories { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 9px 14px; padding: 15px; margin: 12px 0 18px; border: 1px solid var(--line); border-radius: 11px; }
+.health-categories legend { padding: 0 6px; color: var(--forest); font-size: 12px; font-weight: 800; }
+.health-categories label { display: flex; align-items: center; gap: 8px; color: #3e4a46; font-size: 13px; }
+.health-categories input { width: auto; accent-color: var(--forest); }
+.health-warning { color: #87631b; }
+.form-error { padding: 10px 12px; border: 1px solid #efb5a9; border-radius: 9px; color: #a33f31; background: #fff6f4; font-size: 13px; }
