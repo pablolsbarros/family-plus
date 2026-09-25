@@ -61,7 +61,10 @@ export type DashboardCard = { cartaoId: string; nome: string; bandeira: string; 
 export type DashboardCategory = { categoriaId?: string; categoriaNome: string; valorCentavos: number; percentual: number };
 export type DashboardMonthly = { competencia: string; receitasCentavos: number; despesasCentavos: number; resultadoCentavos: number; saldoFinalCentavos: number };
 export type DashboardKpis = { taxaPoupancaPercentual: number; comprometimentoRendaPercentual: number; gastosFixosPercentual: number; proximasDespesasCentavos: number; proximasReceitasCentavos: number; alertasAbertos: number };
-export type DashboardSummary = { saldo: DashboardBalance; periodo: DashboardPeriod; projecao: DashboardProjection; fluxoCaixa: DashboardCashFlow; proximasReceitas: DashboardUpcoming[]; proximasDespesas: DashboardUpcoming[]; cartoes: DashboardCard[]; despesasCategorias: DashboardCategory[]; receitasCategorias: DashboardCategory[]; evolucao: DashboardMonthly[]; kpis: DashboardKpis; orcamento?: BudgetDashboard | null };
+export type FinancialHealthMetric = { valor: number | null; estado: 'calculado' | 'dados_insuficientes' | 'categorias_nao_configuradas' };
+export type FinancialHealthProfile = { membroId?: string | null; metaReservaMeses: number; tetoComprometimentoPercentual: number; metaPoupancaPercentual?: number | null; observacao?: string | null; categoriasEssenciais: string[]; configurado: boolean };
+export type FinancialHealth = { perfil: FinancialHealthProfile; taxaPoupanca: FinancialHealthMetric; reservaEmergenciaMeses: FinancialHealthMetric; comprometimentoRenda: FinancialHealthMetric; gastosFixos: FinancialHealthMetric; coberturaOrcamentaria: FinancialHealthMetric };
+export type DashboardSummary = { saldo: DashboardBalance; periodo: DashboardPeriod; projecao: DashboardProjection; fluxoCaixa: DashboardCashFlow; proximasReceitas: DashboardUpcoming[]; proximasDespesas: DashboardUpcoming[]; cartoes: DashboardCard[]; despesasCategorias: DashboardCategory[]; receitasCategorias: DashboardCategory[]; evolucao: DashboardMonthly[]; kpis: DashboardKpis; orcamento?: BudgetDashboard | null; saudeFinanceira?: FinancialHealth | null };
 export type AlertType = 'CONTA_VENCIDA' | 'CONTA_PROXIMA' | 'FATURA_PROXIMA' | 'FATURA_VENCIDA' | 'SALDO_NEGATIVO' | 'SALDO_PROJETADO_NEGATIVO' | 'LIMITE_CARTAO_ALTO' | 'RECORRENCIA_ATRASADA' | 'ORCAMENTO_ATENCAO' | 'ORCAMENTO_CRITICO' | 'ORCAMENTO_ESTOURADO' | 'ORCAMENTO_ESTOURO_PROJETADO' | 'CATEGORIA_SEM_ORCAMENTO';
 export type AlertSeverity = 'INFORMACAO' | 'ATENCAO' | 'CRITICO';
 export type FinancialAlert = { id: string; tipo: AlertType; severidade: AlertSeverity; titulo: string; mensagem: string; entidadeOrigem: string; entidadeId?: string; dataGeracao: string; dataLeitura?: string; resolvido: boolean };
@@ -104,6 +107,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   });
   const body = (await response.json()) as ApiEnvelope<T>;
   if (!response.ok || !body.success) throw new Error(body.errors?.join(' ') || body.message || 'Não foi possível concluir a operação.');
+  if (options.method && options.method.toUpperCase() !== 'GET') window.dispatchEvent(new CustomEvent('familyplus:financial-data-changed'));
   return body.data as T;
 }
 
@@ -204,6 +208,8 @@ export const api = {
   updateSubscription: (id: string, payload: SubscriptionRequest) => request<Subscription>(`/assinaturas/${id}`, { method: 'PUT', body: JSON.stringify(payload) }),
   subscriptionStatus: (id: string, ativa: boolean) => request<Subscription>(`/assinaturas/${id}/status`, { method: 'PATCH', body: JSON.stringify(ativa) }),
   dashboardSummary: (query: DashboardQuery = {}) => { const params = new URLSearchParams(); Object.entries(query).forEach(([key, value]) => value !== undefined && value !== '' && params.set(key, String(value))); return request<DashboardSummary>(`/dashboard/resumo${params.size ? `?${params}` : ''}`); },
+  financialHealthProfile: (memberId?: string) => request<FinancialHealthProfile>(`/saude-financeira/perfil${memberId ? `?membroId=${encodeURIComponent(memberId)}` : ''}`),
+  saveFinancialHealthProfile: (payload: Omit<FinancialHealthProfile, 'configurado'>) => request<FinancialHealthProfile>('/saude-financeira/perfil', { method: 'PUT', body: JSON.stringify(payload) }),
   dashboardBalance: (query: DashboardQuery = {}) => request<DashboardBalance>(`/dashboard/saldo${queryString(query)}`),
   dashboardAccounts: (query: DashboardQuery = {}) => request<DashboardAccount[]>(`/dashboard/saldos-contas${queryString(query)}`),
   dashboardCashFlow: (query: DashboardQuery = {}) => request<DashboardCashFlow>(`/dashboard/fluxo-caixa${queryString(query)}`),

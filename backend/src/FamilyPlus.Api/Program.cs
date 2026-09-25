@@ -42,6 +42,7 @@ builder.Services.AddScoped<RecurrenceService>();
 builder.Services.AddScoped<DashboardService>();
 builder.Services.AddScoped<AlertService>();
 builder.Services.AddScoped<BudgetService>();
+builder.Services.AddScoped<SaudeFinanceiraService>();
 builder.Services.AddScoped<BackupService>();
 builder.Services.AddScoped<RequireSessionFilter>();
 builder.Services.AddControllers().AddJsonOptions(options =>

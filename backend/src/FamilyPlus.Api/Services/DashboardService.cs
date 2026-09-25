@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace FamilyPlus.Api.Services;
 
-public sealed class DashboardService(FinanceDbContext db, RecurrenceService recurrences, BudgetService budgets, Func<DateTimeOffset>? utcNow = null)
+public sealed class DashboardService(FinanceDbContext db, RecurrenceService recurrences, BudgetService budgets, Func<DateTimeOffset>? utcNow = null, SaudeFinanceiraService? financialHealth = null)
 {
     public async Task<DashboardSummaryResponse> GetSummaryAsync(DashboardQueryRequest request)
     {
@@ -60,7 +60,8 @@ public sealed class DashboardService(FinanceDbContext db, RecurrenceService recu
             Percentage(activeRecurrences.Where(x => x.Tipo == TipoTransacao.DESPESA && x.Classificacao == TipoRecorrencia.CONTA_FIXA).Sum(x => RecurrenceCycle.MonthlyEquivalent(x.ValorCentavos, x.Frequencia)), period.DespesasCentavos),
             upcoming.Expenses.Sum(x => x.ValorCentavos), upcoming.Incomes.Sum(x => x.ValorCentavos), openAlerts);
         var budget = await budgets.DashboardAsync(today.Year, today.Month, request.MembroId);
-        return new DashboardSummaryResponse(balanceResponse, period, projection, flow, upcoming.Incomes, upcoming.Expenses, cards, expenseCategories, incomeCategories, evolution, kpis, budget);
+        var financialHealthResponse = await (financialHealth ?? new SaudeFinanceiraService(db, budgets, utcNow)).CalculateAsync(request.MembroId, periodStart, periodEnd);
+        return new DashboardSummaryResponse(balanceResponse, period, projection, flow, upcoming.Incomes, upcoming.Expenses, cards, expenseCategories, incomeCategories, evolution, kpis, budget, financialHealthResponse);
     }
 
     public async Task<DashboardBalanceResponse> GetBalanceAsync(DashboardQueryRequest request) => (await GetSummaryAsync(request)).Saldo;

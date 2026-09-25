@@ -38,6 +38,7 @@ public sealed class RequireSessionFilter(AuthService authService, FinanceDbConte
     {
         var value = path.Value ?? string.Empty;
         var isWrite = method is "POST" or "PUT" or "PATCH" or "DELETE";
+        if (value.StartsWith("/api/saude-financeira", StringComparison.OrdinalIgnoreCase)) return isWrite ? "ORCAMENTO_EDITAR" : null;
         if (!isWrite)
         {
             if (value.StartsWith("/api/transacoes", StringComparison.OrdinalIgnoreCase) || value.StartsWith("/api/lancamentos", StringComparison.OrdinalIgnoreCase) || value.StartsWith("/api/transferencias", StringComparison.OrdinalIgnoreCase) || value.StartsWith("/api/contas", StringComparison.OrdinalIgnoreCase)) return "MOVIMENTACAO_VISUALIZAR";
