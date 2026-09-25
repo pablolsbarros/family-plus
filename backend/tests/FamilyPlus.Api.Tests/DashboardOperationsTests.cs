@@ -116,7 +116,7 @@ public sealed class DashboardOperationsTests
         });
         await fixture.Db.SaveChangesAsync();
 
-        var metrics = await service.CalculateAsync(fixture.Member.Id, new DateTimeOffset(2025, 12, 1, 0, 0, 0, TimeSpan.Zero), new DateTimeOffset(2025, 12, 31, 0, 0, 0, TimeSpan.Zero));
+        var metrics = await service.CalculateAsync(fixture.Member.Id, new DateTimeOffset(2026, 9, 1, 0, 0, 0, TimeSpan.Zero), new DateTimeOffset(2026, 9, 30, 0, 0, 0, TimeSpan.Zero));
 
         Assert.Equal(60m, metrics.ComprometimentoRenda.Valor);
         Assert.Equal(60m, metrics.GastosFixos.Valor);

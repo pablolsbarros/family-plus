@@ -19,19 +19,19 @@ public sealed class SaudeFinanceiraService(FinanceDbContext db, BudgetService bu
 
     public async Task<FinancialHealthProfileResponse> SaveProfileAsync(FinancialHealthProfileRequest request)
     {
+        var familiaId = db.CurrentFamiliaId ?? throw new InvalidOperationException("O contexto da família ativa é obrigatório para salvar o perfil.");
         if (request.MetaReservaMeses is < 1 or > 60) throw new DomainException("A meta de reserva deve ficar entre 1 e 60 meses.");
         if (request.TetoComprometimentoPercentual is < 0 or > 100) throw new DomainException("O teto de comprometimento deve ficar entre 0 e 100%.");
         if (request.MetaPoupancaPercentual is < 0 or > 100) throw new DomainException("A meta de poupança deve ficar entre 0 e 100%.");
         if (request.Observacao?.Length > 1000) throw new DomainException("A observação deve ter no máximo 1000 caracteres.");
 
-        if (request.MembroId.HasValue && !await db.Membros.AnyAsync(x => x.Id == request.MembroId.Value && x.Ativo))
+        if (request.MembroId.HasValue && !await db.Membros.AnyAsync(x => x.FamiliaId == familiaId && x.Id == request.MembroId.Value && x.Ativo))
             throw new DomainException("O membro selecionado não pertence à família ativa ou está arquivado.");
 
         var categoryIds = request.CategoriasEssenciais.Distinct().ToArray();
-        var validCategories = await db.Categorias.Where(x => categoryIds.Contains(x.Id) && x.Ativo && x.Tipo == TipoCategoria.Despesa).Select(x => x.Id).ToListAsync();
+        var validCategories = await db.Categorias.Where(x => x.FamiliaId == familiaId && categoryIds.Contains(x.Id) && x.Ativo && x.Tipo == TipoCategoria.Despesa).Select(x => x.Id).ToListAsync();
         if (validCategories.Count != categoryIds.Length) throw new DomainException("Selecione apenas categorias de despesa ativas da família.");
 
-        var familiaId = db.CurrentFamiliaId ?? throw new InvalidOperationException("O contexto da família ativa é obrigatório para salvar o perfil.");
         var row = await db.PerfisSaudeFinanceira.SingleOrDefaultAsync(x => x.FamiliaId == familiaId && x.MembroId == request.MembroId);
         if (row is null)
         {
@@ -43,26 +43,33 @@ public sealed class SaudeFinanceiraService(FinanceDbContext db, BudgetService bu
         row.MetaPoupancaPercentual = request.MetaPoupancaPercentual;
         row.Observacao = string.IsNullOrWhiteSpace(request.Observacao) ? null : request.Observacao.Trim();
         row.CategoriasEssenciaisJson = JsonSerializer.Serialize(categoryIds);
+        row.AtualizadoEm = UtcNow();
         await db.SaveChangesAsync();
         return ToResponse(row, true);
     }
 
     public async Task<FinancialHealthResponse> CalculateAsync(Guid? memberId, DateTimeOffset periodStart, DateTimeOffset periodEnd)
     {
+        var familiaId = db.CurrentFamiliaId ?? throw new InvalidOperationException("O contexto da família ativa é obrigatório para calcular os indicadores.");
         var profileRow = await FindProfileAsync(memberId);
         var profile = profileRow is null
             ? new FinancialHealthProfileResponse(memberId, 6m, 30m, 20m, null, [], false)
             : ToResponse(profileRow, true);
 
-        var referenceEnd = UtcNow().ToUniversalTime();
+        var selectedStart = NormalizeBoundary(periodStart);
+        var referenceEnd = NormalizeBoundary(periodEnd);
+        if (referenceEnd < selectedStart) throw new DomainException("O fim do período deve ser igual ou posterior ao início.");
         var historicalEnd = new DateTimeOffset(referenceEnd.Year, referenceEnd.Month, 1, 0, 0, 0, TimeSpan.Zero);
         var historicalStart = historicalEnd.AddMonths(-6);
-        var periodEndExclusive = periodEnd.AddDays(1);
-        var memberAccounts = await db.Contas.AsNoTracking().Where(x => x.Ativo && (!memberId.HasValue || x.MembroId == memberId)).ToListAsync();
+        var periodEndExclusive = referenceEnd.AddDays(1);
+        var familyAccounts = await db.Contas.AsNoTracking().Where(x => x.FamiliaId == familiaId && x.Ativo).ToListAsync();
+        var memberAccounts = familyAccounts.Where(x => !memberId.HasValue || x.MembroId == memberId).ToList();
         var accounts = memberAccounts.Where(x => x.Tipo is TipoConta.ContaCorrente or TipoConta.ContaPoupanca or TipoConta.ContaDigital).ToList();
         var accountIds = memberAccounts.Select(x => x.Id).ToArray();
         var eligibleAccountIds = accounts.Select(x => x.Id).ToArray();
-        var transactions = await db.Transacoes.AsNoTracking().ToListAsync();
+        var transactions = await db.Transacoes.AsNoTracking()
+            .Where(x => x.FamiliaId == familiaId && x.Status == StatusTransacao.EFETIVADA)
+            .ToListAsync();
         var periodTransactions = transactions
             .Where(x => accountIds.Contains(x.ContaId)
                 && (!memberId.HasValue || x.MembroId == memberId)
@@ -74,7 +81,9 @@ public sealed class SaudeFinanceiraService(FinanceDbContext db, BudgetService bu
                 && x.DataMovimentacao < periodEndExclusive)
             .ToList();
         var periodIncome = periodTransactions.Where(x => x.Tipo == TipoTransacao.RECEITA).Sum(x => x.ValorCentavos);
-        var purchases = await db.ComprasCartao.AsNoTracking().ToListAsync();
+        var purchases = await db.ComprasCartao.AsNoTracking()
+            .Where(x => x.FamiliaId == familiaId && x.Status == StatusCompraCartao.ATIVA)
+            .ToListAsync();
         var periodPurchases = purchases
             .Where(x => x.Status == StatusCompraCartao.ATIVA
                 && (!memberId.HasValue || x.MembroId == memberId)
@@ -97,7 +106,12 @@ public sealed class SaudeFinanceiraService(FinanceDbContext db, BudgetService bu
                 && x.DataCompra >= historicalStart
                 && x.DataCompra < historicalEnd)
             .ToList();
-        var refunds = await db.EstornosCartao.AsNoTracking().ToListAsync();
+        var purchaseIds = purchases.Select(x => x.Id).ToArray();
+        var refunds = purchaseIds.Length == 0
+            ? new List<EstornoCartao>()
+            : await db.EstornosCartao.AsNoTracking()
+                .Where(x => x.FamiliaId == familiaId && purchaseIds.Contains(x.CompraCartaoId))
+                .ToListAsync();
         var refundsByPurchase = refunds.GroupBy(x => x.CompraCartaoId).ToDictionary(x => x.Key, x => x.Sum(y => y.ValorCentavos));
         var periodExpense = periodTransactions.Where(x => x.Tipo == TipoTransacao.DESPESA).Sum(x => x.ValorCentavos)
             + periodPurchases.Sum(x => Math.Max(0, x.ValorTotalCentavos - refundsByPurchase.GetValueOrDefault(x.Id)));
@@ -112,11 +126,11 @@ public sealed class SaudeFinanceiraService(FinanceDbContext db, BudgetService bu
             ? (historicalTransactions.Where(x => x.Tipo == TipoTransacao.DESPESA && x.CategoriaId.HasValue && profile.CategoriasEssenciais.Contains(x.CategoriaId.Value)).Sum(x => x.ValorCentavos) + essentialPurchases) / 6m
             : 0m;
 
-        var recurringCandidates = await db.Recorrencias.AsNoTracking().ToListAsync();
+        var recurringCandidates = await db.Recorrencias.AsNoTracking()
+            .Where(x => x.FamiliaId == familiaId && x.Status == StatusRecorrencia.ATIVA && x.Tipo == TipoTransacao.DESPESA)
+            .ToListAsync();
         var recurring = recurringCandidates
-            .Where(x => x.Status == StatusRecorrencia.ATIVA
-                && x.Tipo == TipoTransacao.DESPESA
-                && x.DataInicio <= referenceEnd
+            .Where(x => x.DataInicio <= referenceEnd
                 && (!x.DataFim.HasValue || x.DataFim.Value >= referenceEnd)
                 && (!memberId.HasValue || x.MembroId == memberId))
             .ToList();
@@ -158,4 +172,5 @@ public sealed class SaudeFinanceiraService(FinanceDbContext db, BudgetService bu
 
     private static FinancialHealthMetric Metric(decimal value) => new(Math.Round(value, 2, MidpointRounding.AwayFromZero), "calculado");
     private static FinancialHealthMetric Insufficient() => new(null, "dados_insuficientes");
+    private static DateTimeOffset NormalizeBoundary(DateTimeOffset value) => new(value.Year, value.Month, value.Day, 0, 0, 0, TimeSpan.Zero);
 }

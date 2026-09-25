@@ -19,13 +19,14 @@ public sealed class FinancialHealthController(SaudeFinanceiraService service) : 
     [HttpGet("indicadores")]
     public async Task<ActionResult<ApiResponse<FinancialHealthResponse>>> Indicators([FromQuery] Guid? membroId = null, [FromQuery] string? dataInicio = null, [FromQuery] string? dataFim = null)
     {
-        var start = Parse(dataInicio) ?? new DateTimeOffset(DateTimeOffset.UtcNow.Year, DateTimeOffset.UtcNow.Month, 1, 12, 0, 0, TimeSpan.Zero);
-        var end = Parse(dataFim) ?? DateTimeOffset.UtcNow;
+        var today = DateTimeOffset.UtcNow;
+        var start = Parse(dataInicio) ?? new DateTimeOffset(today.Year, today.Month, 1, 0, 0, 0, TimeSpan.Zero);
+        var end = Parse(dataFim) ?? new DateTimeOffset(today.Year, today.Month, today.Day, 0, 0, 0, TimeSpan.Zero);
         if (end < start) return BadRequest(ApiResponse<FinancialHealthResponse>.Fail("O fim do período deve ser igual ou posterior ao início."));
         return Ok(ApiResponse<FinancialHealthResponse>.Ok(await service.CalculateAsync(membroId, start, end)));
     }
 
     private static DateTimeOffset? Parse(string? value) => DateTimeOffset.TryParse(value, out var parsed)
-        ? new DateTimeOffset(parsed.Year, parsed.Month, parsed.Day, 12, 0, 0, TimeSpan.Zero)
+        ? new DateTimeOffset(parsed.Year, parsed.Month, parsed.Day, 0, 0, 0, TimeSpan.Zero)
         : null;
 }
