@@ -31,10 +31,11 @@ public sealed class SaudeFinanceiraService(FinanceDbContext db, BudgetService bu
         var validCategories = await db.Categorias.Where(x => categoryIds.Contains(x.Id) && x.Ativo && x.Tipo == TipoCategoria.Despesa).Select(x => x.Id).ToListAsync();
         if (validCategories.Count != categoryIds.Length) throw new DomainException("Selecione apenas categorias de despesa ativas da família.");
 
-        var row = await db.PerfisSaudeFinanceira.SingleOrDefaultAsync(x => x.MembroId == request.MembroId);
+        var familiaId = db.CurrentFamiliaId ?? throw new InvalidOperationException("O contexto da família ativa é obrigatório para salvar o perfil.");
+        var row = await db.PerfisSaudeFinanceira.SingleOrDefaultAsync(x => x.FamiliaId == familiaId && x.MembroId == request.MembroId);
         if (row is null)
         {
-            row = new PerfilSaudeFinanceira { FamiliaId = db.CurrentFamiliaId, MembroId = request.MembroId };
+            row = new PerfilSaudeFinanceira { FamiliaId = familiaId, MembroId = request.MembroId };
             db.PerfisSaudeFinanceira.Add(row);
         }
         row.MetaReservaMeses = request.MetaReservaMeses;
@@ -53,28 +54,55 @@ public sealed class SaudeFinanceiraService(FinanceDbContext db, BudgetService bu
             ? new FinancialHealthProfileResponse(memberId, 6m, 30m, 20m, null, [], false)
             : ToResponse(profileRow, true);
 
-        var endMonth = new DateTimeOffset(periodEnd.Year, periodEnd.Month, 1, 12, 0, 0, TimeSpan.Zero);
-        var firstMonth = endMonth.AddMonths(-6);
-        var referenceEnd = periodEnd;
+        var referenceEnd = UtcNow().ToUniversalTime();
+        var historicalEnd = new DateTimeOffset(referenceEnd.Year, referenceEnd.Month, 1, 0, 0, 0, TimeSpan.Zero);
+        var historicalStart = historicalEnd.AddMonths(-6);
+        var periodEndExclusive = periodEnd.AddDays(1);
         var memberAccounts = await db.Contas.AsNoTracking().Where(x => x.Ativo && (!memberId.HasValue || x.MembroId == memberId)).ToListAsync();
         var accounts = memberAccounts.Where(x => x.Tipo is TipoConta.ContaCorrente or TipoConta.ContaPoupanca or TipoConta.ContaDigital).ToList();
         var accountIds = memberAccounts.Select(x => x.Id).ToArray();
         var eligibleAccountIds = accounts.Select(x => x.Id).ToArray();
-        var transactions = await db.Transacoes.AsNoTracking()
-            .Where(x => accountIds.Contains(x.ContaId) && (!memberId.HasValue || x.MembroId == memberId) && x.Status == StatusTransacao.EFETIVADA && x.Origem != OrigemTransacao.PAGAMENTO_FATURA && (x.Tipo == TipoTransacao.RECEITA || x.Tipo == TipoTransacao.DESPESA))
-            .ToListAsync();
-        var periodTransactions = transactions.Where(x => x.DataMovimentacao >= periodStart && x.DataMovimentacao < periodEnd.AddDays(1)).ToList();
+        var transactions = await db.Transacoes.AsNoTracking().ToListAsync();
+        var periodTransactions = transactions
+            .Where(x => accountIds.Contains(x.ContaId)
+                && (!memberId.HasValue || x.MembroId == memberId)
+                && x.Status == StatusTransacao.EFETIVADA
+                && x.Origem != OrigemTransacao.PAGAMENTO_FATURA
+                && x.TransferenciaId == null
+                && (x.Tipo is TipoTransacao.RECEITA or TipoTransacao.DESPESA)
+                && x.DataMovimentacao >= periodStart
+                && x.DataMovimentacao < periodEndExclusive)
+            .ToList();
         var periodIncome = periodTransactions.Where(x => x.Tipo == TipoTransacao.RECEITA).Sum(x => x.ValorCentavos);
-        var activePurchases = await db.ComprasCartao.AsNoTracking().Where(x => x.Status == StatusCompraCartao.ATIVA && (!memberId.HasValue || x.MembroId == memberId)).ToListAsync();
+        var purchases = await db.ComprasCartao.AsNoTracking().ToListAsync();
+        var periodPurchases = purchases
+            .Where(x => x.Status == StatusCompraCartao.ATIVA
+                && (!memberId.HasValue || x.MembroId == memberId)
+                && x.DataCompra >= periodStart
+                && x.DataCompra < periodEndExclusive)
+            .ToList();
+        var historicalTransactions = transactions
+            .Where(x => accountIds.Contains(x.ContaId)
+                && (!memberId.HasValue || x.MembroId == memberId)
+                && x.Status == StatusTransacao.EFETIVADA
+                && x.Origem != OrigemTransacao.PAGAMENTO_FATURA
+                && x.TransferenciaId == null
+                && (x.Tipo is TipoTransacao.RECEITA or TipoTransacao.DESPESA)
+                && x.DataCompetencia >= historicalStart
+                && x.DataCompetencia < historicalEnd)
+            .ToList();
+        var historicalPurchases = purchases
+            .Where(x => x.Status == StatusCompraCartao.ATIVA
+                && (!memberId.HasValue || x.MembroId == memberId)
+                && x.DataCompra >= historicalStart
+                && x.DataCompra < historicalEnd)
+            .ToList();
         var refunds = await db.EstornosCartao.AsNoTracking().ToListAsync();
         var refundsByPurchase = refunds.GroupBy(x => x.CompraCartaoId).ToDictionary(x => x.Key, x => x.Sum(y => y.ValorCentavos));
-        var periodPurchases = activePurchases.Where(x => x.DataCompra >= periodStart && x.DataCompra < periodEnd.AddDays(1)).ToList();
         var periodExpense = periodTransactions.Where(x => x.Tipo == TipoTransacao.DESPESA).Sum(x => x.ValorCentavos)
             + periodPurchases.Sum(x => Math.Max(0, x.ValorTotalCentavos - refundsByPurchase.GetValueOrDefault(x.Id)));
         var savingRate = periodIncome > 0 ? Metric((decimal)(periodIncome - periodExpense) * 100 / periodIncome) : Insufficient();
 
-        var historicalTransactions = transactions.Where(x => x.DataCompetencia >= firstMonth && x.DataCompetencia < endMonth).ToList();
-        var historicalPurchases = activePurchases.Where(x => x.DataCompra >= firstMonth && x.DataCompra < endMonth).ToList();
         var monthsWithHistory = historicalTransactions.Select(x => (x.DataCompetencia.Year, x.DataCompetencia.Month))
             .Concat(historicalPurchases.Select(x => (x.DataCompra.Year, x.DataCompra.Month))).Distinct().Count();
         var enoughHistory = monthsWithHistory >= 3;
@@ -97,8 +125,13 @@ public sealed class SaudeFinanceiraService(FinanceDbContext db, BudgetService bu
         var commitment = enoughHistory && averageIncome > 0 ? Metric((decimal)recurringExpense * 100 / averageIncome) : Insufficient();
         var fixedShare = enoughHistory && averageIncome > 0 ? Metric((decimal)fixedExpense * 100 / averageIncome) : Insufficient();
 
-        var balances = await db.Transacoes.AsNoTracking().Where(x => eligibleAccountIds.Contains(x.ContaId) && x.Status == StatusTransacao.EFETIVADA).ToListAsync();
-        var available = accounts.Sum(account => Math.Max(0, FinanceCalculator.CalculateBalance(account.SaldoInicialCentavos, balances.Where(x => x.ContaId == account.Id).Select(x => (x.Tipo, x.ValorCentavos, x.Status)))));
+        var balances = transactions
+            .Where(x => eligibleAccountIds.Contains(x.ContaId) && x.Status == StatusTransacao.EFETIVADA)
+            .ToList();
+        var available = accounts.Sum(account => Math.Max(0, FinanceCalculator.CalculateBalance(
+            account.SaldoInicialCentavos,
+            balances.Where(x => x.ContaId == account.Id)
+                .Select(x => (x.Tipo, x.ValorCentavos, x.Status)))));
         var reserve = profile.CategoriasEssenciais.Count == 0
             ? new FinancialHealthMetric(null, "categorias_nao_configuradas")
             : enoughHistory && averageEssentialExpenses > 0 ? Metric((decimal)available / averageEssentialExpenses) : Insufficient();
@@ -110,11 +143,14 @@ public sealed class SaudeFinanceiraService(FinanceDbContext db, BudgetService bu
         return new FinancialHealthResponse(profile, savingRate, reserve, commitment, fixedShare, coverage);
     }
 
-    private Task<PerfilSaudeFinanceira?> FindProfileAsync(Guid? memberId) => db.PerfisSaudeFinanceira
-        .AsNoTracking()
-        .Where(x => x.MembroId == memberId || (memberId.HasValue && x.MembroId == null))
-        .OrderByDescending(x => x.MembroId == memberId)
-        .FirstOrDefaultAsync();
+    private Task<PerfilSaudeFinanceira?> FindProfileAsync(Guid? memberId)
+    {
+        var familiaId = db.CurrentFamiliaId ?? throw new InvalidOperationException("O contexto da família ativa é obrigatório para consultar o perfil.");
+        return db.PerfisSaudeFinanceira.AsNoTracking()
+            .Where(x => x.FamiliaId == familiaId && (x.MembroId == memberId || (memberId.HasValue && x.MembroId == null)))
+            .OrderByDescending(x => x.MembroId == memberId)
+            .FirstOrDefaultAsync();
+    }
 
     private static FinancialHealthProfileResponse ToResponse(PerfilSaudeFinanceira row, bool configured) => new(
         row.MembroId, row.MetaReservaMeses, row.TetoComprometimentoPercentual, row.MetaPoupancaPercentual, row.Observacao,

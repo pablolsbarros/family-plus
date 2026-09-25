@@ -38,6 +38,7 @@ public sealed class RequireSessionFilter(AuthService authService, FinanceDbConte
     {
         var value = path.Value ?? string.Empty;
         var isWrite = method is "POST" or "PUT" or "PATCH" or "DELETE";
+        if (value.StartsWith("/api/saude-financeira", StringComparison.OrdinalIgnoreCase)) return isWrite ? "ORCAMENTO_EDITAR" : null;
         if (!isWrite)
         {
             if (value.StartsWith("/api/transacoes", StringComparison.OrdinalIgnoreCase) || value.StartsWith("/api/lancamentos", StringComparison.OrdinalIgnoreCase) || value.StartsWith("/api/transferencias", StringComparison.OrdinalIgnoreCase) || value.StartsWith("/api/contas", StringComparison.OrdinalIgnoreCase)) return "MOVIMENTACAO_VISUALIZAR";
@@ -50,7 +51,6 @@ public sealed class RequireSessionFilter(AuthService authService, FinanceDbConte
         if (value.StartsWith("/api/cartoes", StringComparison.OrdinalIgnoreCase) || value.StartsWith("/api/compras-cartao", StringComparison.OrdinalIgnoreCase) || value.StartsWith("/api/faturas", StringComparison.OrdinalIgnoreCase)) return method == "POST" ? "CARTAO_CRIAR" : "CARTAO_ADMINISTRAR";
         if (value.StartsWith("/api/recorrencias", StringComparison.OrdinalIgnoreCase) || value.StartsWith("/api/ocorrencias-recorrentes", StringComparison.OrdinalIgnoreCase) || value.StartsWith("/api/assinaturas", StringComparison.OrdinalIgnoreCase)) return "RECORRENCIA_ADMINISTRAR";
         if (value.StartsWith("/api/orcamentos", StringComparison.OrdinalIgnoreCase)) return "ORCAMENTO_EDITAR";
-        if (value.StartsWith("/api/saude-financeira", StringComparison.OrdinalIgnoreCase)) return "ORCAMENTO_EDITAR";
         if (value.StartsWith("/api/seguranca", StringComparison.OrdinalIgnoreCase) || value.StartsWith("/api/configuracoes/preferencias", StringComparison.OrdinalIgnoreCase) || value.StartsWith("/api/configuracoes/notificacoes", StringComparison.OrdinalIgnoreCase)) return null;
         if (value.StartsWith("/api/configuracoes/backup", StringComparison.OrdinalIgnoreCase)) return "BACKUP_RESTAURAR";
         if (value.StartsWith("/api/configuracoes", StringComparison.OrdinalIgnoreCase)) return "CONFIGURACAO_ADMINISTRAR";

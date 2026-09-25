@@ -64,7 +64,7 @@ export type DashboardKpis = { taxaPoupancaPercentual: number; comprometimentoRen
 export type FinancialHealthMetric = { valor: number | null; estado: 'calculado' | 'dados_insuficientes' | 'categorias_nao_configuradas' };
 export type FinancialHealthProfile = { membroId?: string | null; metaReservaMeses: number; tetoComprometimentoPercentual: number; metaPoupancaPercentual?: number | null; observacao?: string | null; categoriasEssenciais: string[]; configurado: boolean };
 export type FinancialHealth = { perfil: FinancialHealthProfile; taxaPoupanca: FinancialHealthMetric; reservaEmergenciaMeses: FinancialHealthMetric; comprometimentoRenda: FinancialHealthMetric; gastosFixos: FinancialHealthMetric; coberturaOrcamentaria: FinancialHealthMetric };
-export type DashboardSummary = { saldo: DashboardBalance; periodo: DashboardPeriod; projecao: DashboardProjection; fluxoCaixa: DashboardCashFlow; proximasReceitas: DashboardUpcoming[]; proximasDespesas: DashboardUpcoming[]; cartoes: DashboardCard[]; despesasCategorias: DashboardCategory[]; receitasCategorias: DashboardCategory[]; evolucao: DashboardMonthly[]; kpis: DashboardKpis; orcamento?: BudgetDashboard | null };
+export type DashboardSummary = { saldo: DashboardBalance; periodo: DashboardPeriod; projecao: DashboardProjection; fluxoCaixa: DashboardCashFlow; proximasReceitas: DashboardUpcoming[]; proximasDespesas: DashboardUpcoming[]; cartoes: DashboardCard[]; despesasCategorias: DashboardCategory[]; receitasCategorias: DashboardCategory[]; evolucao: DashboardMonthly[]; kpis: DashboardKpis; orcamento?: BudgetDashboard | null; saudeFinanceira?: FinancialHealth | null };
 export type AlertType = 'CONTA_VENCIDA' | 'CONTA_PROXIMA' | 'FATURA_PROXIMA' | 'FATURA_VENCIDA' | 'SALDO_NEGATIVO' | 'SALDO_PROJETADO_NEGATIVO' | 'LIMITE_CARTAO_ALTO' | 'RECORRENCIA_ATRASADA' | 'ORCAMENTO_ATENCAO' | 'ORCAMENTO_CRITICO' | 'ORCAMENTO_ESTOURADO' | 'ORCAMENTO_ESTOURO_PROJETADO' | 'CATEGORIA_SEM_ORCAMENTO';
 export type AlertSeverity = 'INFORMACAO' | 'ATENCAO' | 'CRITICO';
 export type FinancialAlert = { id: string; tipo: AlertType; severidade: AlertSeverity; titulo: string; mensagem: string; entidadeOrigem: string; entidadeId?: string; dataGeracao: string; dataLeitura?: string; resolvido: boolean };
@@ -107,7 +107,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   });
   const body = (await response.json()) as ApiEnvelope<T>;
   if (!response.ok || !body.success) throw new Error(body.errors?.join(' ') || body.message || 'Não foi possível concluir a operação.');
-  if (options.method && options.method.toUpperCase() !== 'GET' && !path.startsWith('/saude-financeira')) window.dispatchEvent(new CustomEvent('familyplus:financial-data-changed'));
+  if (options.method && options.method.toUpperCase() !== 'GET') window.dispatchEvent(new CustomEvent('familyplus:financial-data-changed'));
   return body.data as T;
 }
 

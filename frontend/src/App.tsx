@@ -174,8 +174,8 @@ function CloseTabDialog({ screen, onCancel, onDiscard }: { screen: ScreenDefinit
   return <div className="palette-backdrop"><section className="close-tab-dialog" role="dialog" aria-modal="true"><p className="eyebrow">FECHAR TELA</p><h2>Fechar “{screen.label}”?</h2><p>O contexto desta tela será removido das abas abertas. Como não há alterações pendentes, ela pode ser aberta novamente a qualquer momento pelo menu ou pelo acesso rápido.</p><div><Button tone="secondary" onClick={onCancel}>Cancelar</Button><Button onClick={onDiscard}>Fechar aba</Button></div></section></div>;
 }
 
-function financialHealthOf(summary: DashboardSummary) { return (summary as DashboardSummary & { saudeFinanceira?: FinancialHealth | null }).saudeFinanceira; }
-function healthValue(metric: FinancialHealth['taxaPoupanca'] | undefined, suffix = '') { return metric?.estado === 'calculado' && metric.valor !== null ? `${metric.valor.toLocaleString('pt-BR')}${suffix}` : metric?.estado === 'categorias_nao_configuradas' ? 'Configure categorias' : 'Dados insuficientes para calcular'; }
+function financialHealthOf(summary: DashboardSummary) { return summary.saudeFinanceira; }
+function healthValue(metric: FinancialHealth['taxaPoupanca'] | undefined, suffix = '') { return metric?.estado === 'calculado' && metric.valor !== null ? `${metric.valor.toLocaleString('pt-BR')}${suffix}` : metric?.estado === 'categorias_nao_configuradas' ? 'Configure as categorias essenciais para calcular sua reserva de emergência.' : 'Dados insuficientes para calcular'; }
 
 function FinancialHealthPanel({ health, members, memberId, onSaved }: { health: FinancialHealth | null; members: Member[]; memberId: string; onSaved: () => void }) {
   const [categories, setCategories] = useState<Category[]>([]);

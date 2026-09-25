@@ -103,7 +103,7 @@ public sealed class DashboardOperationsTests
         await service.SaveProfileAsync(new FinancialHealthProfileRequest(fixture.Member.Id, 6m, 30m, 20m, null, [fixture.ExpenseCategory.Id]));
         foreach (var month in new[] { 3, 4, 5 })
         {
-            var date = new DateTimeOffset(2026, month, 15, 12, 0, 0, TimeSpan.Zero);
+            var date = new DateTimeOffset(2026, month, month == 3 ? 1 : 15, 0, 0, 0, TimeSpan.Zero);
             await fixture.AddTransactionAsync(TipoTransacao.RECEITA, 100_000, StatusTransacao.EFETIVADA, data: date);
             await fixture.AddTransactionAsync(TipoTransacao.DESPESA, 20_000, StatusTransacao.EFETIVADA, data: date);
         }
@@ -116,11 +116,32 @@ public sealed class DashboardOperationsTests
         });
         await fixture.Db.SaveChangesAsync();
 
-        var metrics = await service.CalculateAsync(fixture.Member.Id, new DateTimeOffset(2026, 9, 1, 12, 0, 0, TimeSpan.Zero), new DateTimeOffset(2026, 9, 30, 12, 0, 0, TimeSpan.Zero));
+        var metrics = await service.CalculateAsync(fixture.Member.Id, new DateTimeOffset(2025, 12, 1, 0, 0, 0, TimeSpan.Zero), new DateTimeOffset(2025, 12, 31, 0, 0, 0, TimeSpan.Zero));
 
         Assert.Equal(60m, metrics.ComprometimentoRenda.Valor);
         Assert.Equal(60m, metrics.GastosFixos.Valor);
         Assert.Equal(44m, metrics.ReservaEmergenciaMeses.Valor);
+    }
+
+    [Fact]
+    public async Task Saude_financeira_isola_perfis_por_familia()
+    {
+        await using var fixture = await DashboardFixture.CreateAsync();
+        var service = new SaudeFinanceiraService(fixture.Db, fixture.Budgets, () => fixture.Today);
+        await service.SaveProfileAsync(new FinancialHealthProfileRequest(null, 6m, 30m, 20m, "Família original", []));
+        var firstFamilyId = fixture.Db.CurrentFamiliaId!.Value;
+
+        fixture.Db.SetFamilyContext(Guid.NewGuid());
+        await service.SaveProfileAsync(new FinancialHealthProfileRequest(null, 12m, 25m, 15m, "Outra família", []));
+        var otherFamily = await service.GetProfileAsync(null);
+
+        fixture.Db.SetFamilyContext(firstFamilyId);
+        var originalFamily = await service.GetProfileAsync(null);
+
+        Assert.Equal("Outra família", otherFamily.Observacao);
+        Assert.Equal(12m, otherFamily.MetaReservaMeses);
+        Assert.Equal("Família original", originalFamily.Observacao);
+        Assert.Equal(6m, originalFamily.MetaReservaMeses);
     }
 
     [Fact]
@@ -179,7 +200,7 @@ public sealed class DashboardOperationsTests
 
         public static async Task<DashboardFixture> CreateAsync(long initialBalance = 200_000)
         {
-            var connection = new SqliteConnection("Data Source=:memory:"); await connection.OpenAsync(); var db = new FinanceDbContext(new DbContextOptionsBuilder<FinanceDbContext>().UseSqlite(connection).Options); await db.Database.EnsureCreatedAsync(); var fixture = new DashboardFixture(connection, db); fixture.Member = new Membro { Nome = "Pablo" }; fixture.Account = new Conta { MembroId = fixture.Member.Id, Nome = "Conta", Tipo = TipoConta.ContaCorrente, SaldoInicialCentavos = initialBalance }; fixture.IncomeCategory = new Categoria { Nome = "Salário", Tipo = TipoCategoria.Receita }; fixture.ExpenseCategory = new Categoria { Nome = "Casa", Tipo = TipoCategoria.Despesa }; db.AddRange(fixture.Member, fixture.Account, fixture.IncomeCategory, fixture.ExpenseCategory); await db.SaveChangesAsync(); return fixture;
+            var connection = new SqliteConnection("Data Source=:memory:"); await connection.OpenAsync(); var db = new FinanceDbContext(new DbContextOptionsBuilder<FinanceDbContext>().UseSqlite(connection).Options); await db.Database.EnsureCreatedAsync(); var fixture = new DashboardFixture(connection, db); var familyId = Guid.NewGuid(); db.SetFamilyContext(familyId); db.Familias.Add(new Familia { Id = familyId, Nome = "Família teste" }); fixture.Member = new Membro { Nome = "Pablo" }; fixture.Account = new Conta { MembroId = fixture.Member.Id, Nome = "Conta", Tipo = TipoConta.ContaCorrente, SaldoInicialCentavos = initialBalance }; fixture.IncomeCategory = new Categoria { Nome = "Salário", Tipo = TipoCategoria.Receita }; fixture.ExpenseCategory = new Categoria { Nome = "Casa", Tipo = TipoCategoria.Despesa }; db.AddRange(fixture.Member, fixture.Account, fixture.IncomeCategory, fixture.ExpenseCategory); await db.SaveChangesAsync(); return fixture;
         }
         public async Task AddTransactionAsync(TipoTransacao type, long value, StatusTransacao status, OrigemTransacao origin = OrigemTransacao.NORMAL, DateTimeOffset? data = null) { Db.Transacoes.Add(new Transacao { MembroId = Member.Id, ContaId = Account.Id, CategoriaId = type == TipoTransacao.RECEITA ? IncomeCategory.Id : ExpenseCategory.Id, Tipo = type, Descricao = "Teste", ValorCentavos = value, DataCompetencia = data ?? Today, DataMovimentacao = data ?? Today, Status = status, Origem = origin }); await Db.SaveChangesAsync(); }
         public async ValueTask DisposeAsync() { await Db.DisposeAsync(); await connection.DisposeAsync(); }
